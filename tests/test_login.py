@@ -12,6 +12,7 @@ import unittest
 
 from support import FakeTransport, IsolatedConfigTestCase  # noqa: E402
 
+import _hcommon
 import humalike_login  # noqa: E402
 from _hcommon import ApiError, TransportError, load_api_key  # noqa: E402
 from humalike_login import (  # noqa: E402
@@ -76,18 +77,25 @@ class TestShortHostname(unittest.TestCase):
 
 
 class TestCreateSession(IsolatedConfigTestCase):
-    def test_posts_to_cli_create_anonymously(self) -> None:
+    def test_posts_to_cli_create_with_the_public_client_id(self) -> None:
+        """The lane is anonymous in the sense that no USER credential exists
+        yet, but it is not unauthenticated: production answers a bare request
+        with 401, so the public client identifier always goes with it. This
+        test previously asserted the opposite and shipped a login that could
+        not log anyone in."""
         transport = FakeTransport([(200, {"device_code": "hcd_x", "user_code": "hcu_y"})])
         create_session(transport, client="claude-code", hostname="testbox")
         call = transport.calls[0]
         self.assertTrue(call["url"].endswith("/v1/keys/actions/cli_create"))
         self.assertEqual(call["payload"]["client"], "claude-code")
         self.assertEqual(call["payload"]["hostname"], "testbox")
-        self.assertNotIn("Authorization", call["headers"])
+        self.assertEqual(
+            call["headers"]["Authorization"], f"Bearer {_hcommon.GATEWAY_KEY_DEFAULT}"
+        )
 
     def test_sends_the_gateway_key_when_one_is_configured(self) -> None:
-        """Local stacks have no gateway in front of svc-keys, so the developer
-        supplies the shared key that production would have injected."""
+        """Staging and local stacks carry their own key, so the env var wins
+        over the published production default."""
         os.environ["HUMALIKE_CLI_GATEWAY_KEY"] = "local-cli-gateway-key"
         transport = FakeTransport([(200, {})])
         create_session(transport, client="c", hostname="h")

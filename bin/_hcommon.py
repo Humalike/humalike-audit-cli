@@ -78,18 +78,25 @@ def keys_base_url() -> str:
     return os.environ.get("HUMALIKE_KEYS_URL", api_base_url()).rstrip("/")
 
 
+# RFC 8628 public client identifier for the device-auth lane. It names "a CLI"
+# to the API and unlocks ONLY cli_create/cli_poll; the per-session device_code
+# stays the sole credential that can claim a key, and the human still has to
+# approve the session in a browser. So it ships in the open like any OAuth
+# public client_id — the Hermes plugin publishes the same value for the same
+# reason. Override with HUMALIKE_CLI_GATEWAY_KEY to point at staging or a local
+# stack, which carry different keys.
+GATEWAY_KEY_DEFAULT = "hcg_360rQLmr4iabWKiEqc5ZFXY5sUM8g-wTjFO3cwNgTlI"
+
+
 def cli_gateway_key() -> str | None:
-    """Shared key that fronts the anonymous device-auth lane, if one is needed.
+    """The key that opens the anonymous device-auth lane.
 
-    In production the API gateway injects this before the request reaches
-    svc-keys, so the CLI sends nothing and the lane is anonymous from the
-    client's point of view. A local stack has no gateway in front of it, so a
-    developer pointing this CLI at ``127.0.0.1`` must supply the key themselves.
-
-    Dev-only knob. Leave it unset against the hosted API.
+    An earlier version of this assumed the hosted gateway injected the key and
+    sent nothing; production answers such a request with 401 UNAUTHORIZED, so
+    every client sends it, exactly as the Hermes plugin does.
     """
     value = os.environ.get("HUMALIKE_CLI_GATEWAY_KEY", "").strip()
-    return value or None
+    return value or GATEWAY_KEY_DEFAULT
 
 
 def credentials_path() -> Path:
