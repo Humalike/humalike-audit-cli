@@ -229,6 +229,39 @@ class ExtractErrorMessageDetailShapes(unittest.TestCase):
         self.assertEqual(message, "nope")
 
 
+
+class CredentialsRememberTheirDeployment(unittest.TestCase):
+    """A key is only valid on the deployment that minted it, and an agent runs
+    every CLI command in a fresh shell with none of the environment that logged
+    in. So the login records its endpoints, and later calls follow them."""
+
+    def test_saved_api_url_is_used_when_the_env_is_absent(self) -> None:
+        os.environ["HUMALIKE_API_URL"] = "http://127.0.0.1:8010"
+        save_api_key("ak_local")
+        del os.environ["HUMALIKE_API_URL"]
+        self.assertEqual(api_base_url(), "http://127.0.0.1:8010")
+        self.assertEqual(load_api_key(), "ak_local")
+
+    def test_env_still_wins_over_the_saved_value(self) -> None:
+        os.environ["HUMALIKE_API_URL"] = "http://127.0.0.1:8010"
+        save_api_key("ak_local")
+        os.environ["HUMALIKE_API_URL"] = "https://api.humalike.com"
+        self.assertEqual(api_base_url(), "https://api.humalike.com")
+
+    def test_separate_keys_url_is_recorded_only_when_it_differs(self) -> None:
+        os.environ["HUMALIKE_API_URL"] = "http://127.0.0.1:8010"
+        os.environ["HUMALIKE_KEYS_URL"] = "http://127.0.0.1:8011"
+        path = save_api_key("ak_local")
+        del os.environ["HUMALIKE_API_URL"]
+        del os.environ["HUMALIKE_KEYS_URL"]
+        self.assertEqual(keys_base_url(), "http://127.0.0.1:8011")
+        document = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(document["api_url"], "http://127.0.0.1:8010")
+
+    def test_no_saved_login_falls_back_to_the_hosted_api(self) -> None:
+        self.assertEqual(api_base_url(), _hcommon.DEFAULT_API_URL)
+
+
 class TestVerifyApiKey(IsolatedConfigTestCase):
     def test_200_means_the_key_works(self) -> None:
         transport = FakeTransport([(200, {"user_id": "user_1"})])

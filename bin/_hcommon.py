@@ -62,8 +62,18 @@ CREDENTIALS_MODE = 0o600
 
 
 def api_base_url() -> str:
-    """Base URL for the audit endpoints (``HUMALIKE_API_URL``)."""
-    return os.environ.get("HUMALIKE_API_URL", DEFAULT_API_URL).rstrip("/")
+    """Base URL for the audit endpoints.
+
+    Precedence is env, then whatever the saved login recorded, then the hosted
+    API. The saved value matters because a key is only valid on the deployment
+    that minted it: an agent runs each CLI command in a fresh shell, so without
+    this a login pointed at a local stack would be followed by calls to
+    production, which would fail with a confusing 401.
+    """
+    from_env = os.environ.get("HUMALIKE_API_URL", "").strip()
+    if from_env:
+        return from_env.rstrip("/")
+    return str(_saved_credentials().get("api_url") or DEFAULT_API_URL).rstrip("/")
 
 
 def keys_base_url() -> str:
@@ -75,7 +85,11 @@ def keys_base_url() -> str:
     ports (svc-social-observability on 8010, svc-keys on 8011) with no gateway
     in front of them. Treat ``HUMALIKE_KEYS_URL`` as a dev-only knob.
     """
-    return os.environ.get("HUMALIKE_KEYS_URL", api_base_url()).rstrip("/")
+    from_env = os.environ.get("HUMALIKE_KEYS_URL", "").strip()
+    if from_env:
+        return from_env.rstrip("/")
+    saved = _saved_credentials().get("keys_url")
+    return str(saved).rstrip("/") if saved else api_base_url()
 
 
 # RFC 8628 public client identifier for the device-auth lane. It names "a CLI"
@@ -338,6 +352,18 @@ def post_json(
 # --------------------------------------------------------------------------
 
 
+def _saved_credentials() -> dict[str, Any]:
+    """The credentials document, or an empty mapping if there is not one."""
+    path = credentials_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def load_api_key() -> str | None:
     """Return the API key to use, or ``None`` if there is not one yet.
 
@@ -379,7 +405,12 @@ def save_api_key(api_key: str, *, account: dict[str, Any] | None = None) -> Path
     path = credentials_path()
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
-    document: dict[str, Any] = {"api_key": api_key}
+    # Bind the key to its deployment (see api_base_url): every later command
+    # runs in its own shell with none of the environment that logged in.
+    document: dict[str, Any] = {"api_key": api_key, "api_url": api_base_url()}
+    keys_url = keys_base_url()
+    if keys_url != document["api_url"]:
+        document["keys_url"] = keys_url
     if account:
         document["account"] = account
 
