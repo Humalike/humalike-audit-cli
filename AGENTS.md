@@ -9,13 +9,33 @@ answers what the transcript cannot answer alone: *how did that land?* It scores
 the agent's social conduct, points at the specific messages that damaged the
 interaction, and rewrites the worst ones.
 
-> This is the same workflow as `skills/audit-transcript/SKILL.md`, written for
-> agents without a skill system. If you change one, change the other.
+<!--
+  SOURCE OF TRUTH: the playbook printed by `start` (see print_playbook() in the
+  repo root's `start` script). This file and skills/humalike-audit/SKILL.md
+  restate that same playbook for audiences that will not run `start` first. If
+  you change the steps or the rules here, change them in `start` too — the
+  script is what most agents actually read, and drift between them is a bug.
+-->
 
-## Requirements
+## Setup — one command
 
-Python 3 (any 3.9+). Nothing to install — the scripts are standard library only.
-Run every command from the root of this repository.
+```bash
+bash ~/.humalike/audit-cli/start
+```
+
+Run this first, always. It updates the checkout, checks prerequisites, starts a
+sign-in if there is no working key, and prints this same playbook with the paths
+already resolved. **If you ran it, follow its output and ignore the rest of this
+file** — it is the same procedure, generated fresh.
+
+If the checkout is not there yet:
+
+```bash
+git clone https://github.com/Humalike/humalike-audit-cli ~/.humalike/audit-cli 2>/dev/null; bash ~/.humalike/audit-cli/start
+```
+
+Requirements: `git` and Python 3.9+. The scripts are standard library only —
+there is nothing to install and no virtualenv to activate.
 
 ## Two rules that outrank everything else
 
@@ -28,32 +48,24 @@ Run every command from the root of this repository.
 
 ---
 
-## Step 1 — Check for a working key
+## Step 1 — Make sure you have a key
 
-```bash
-python3 bin/humalike_login.py --status --json
-```
+`start` handles this. If it printed a sign-in link:
 
-Exit 0 = a working key is saved, skip to Step 3. Non-zero = do Step 2.
-
-## Step 2 — Log in
-
-```bash
-python3 bin/humalike_login.py
-```
-
-This prints an approval URL and a short user code, then blocks while it polls.
-
-- **Show the user the URL and code exactly as printed.** They open it in their
-  own browser. You cannot approve it for them, and you must never ask for their
-  password.
+- **Show the user the URL and code exactly as printed**, immediately. They open
+  it in their own browser. You cannot approve it for them, and you must never
+  ask for their password.
 - Signing in there creates a Humalike account if they do not have one. There is
   no separate signup step.
-- On approval the command exits 0 and writes the key to
-  `~/.humalike/credentials` (mode 0600). **Never print or echo the key.**
+- Then run `bash ~/.humalike/audit-cli/start --wait-login`. It blocks until they
+  approve and writes the key to `~/.humalike/credentials` (mode 0600).
+  **Never print or echo the key.**
 - If it reports denied or expired, tell the user and offer to run it again.
 
-## Step 3 — Get the transcript
+To check at any time: `bash ~/.humalike/audit-cli/start --status` (exit 0 =
+ready).
+
+## Step 2 — Get the transcript
 
 Ask for a file path or pasted text. Anything is fine: WhatsApp `_chat.txt`, a
 Slack export, a CSV, a raw log, any language. The backend normalizes it with an
@@ -63,10 +75,10 @@ LLM.
 destroy signal the audit needs. If the user pastes text, write it verbatim to a
 file and pass `--file`.
 
-## Step 4 — Prepare
+## Step 3 — Prepare
 
 ```bash
-python3 bin/humalike_audit.py --json prepare --file <path>
+python3 ~/.humalike/audit-cli/bin/humalike_audit.py --json prepare --file <path>
 ```
 
 Returns:
@@ -86,7 +98,7 @@ If it fails because the transcript is over the message cap (250), relay the
 server's message verbatim, then **offer** to audit the most recent 250 messages
 and let the human choose. Never trim silently.
 
-## Step 5 — Ask which speaker is the agent
+## Step 4 — Ask which speaker is the agent
 
 Do not skip this. Show the participants and ask, offering the guess as a
 default:
@@ -96,20 +108,20 @@ default:
 
 Wait for a real answer before continuing.
 
-## Step 6 — Launch
+## Step 5 — Launch
 
 ```bash
-python3 bin/humalike_audit.py --json launch --run-id <id> --agent "<confirmed speaker>"
+python3 ~/.humalike/audit-cli/bin/humalike_audit.py --json launch --run-id <id> --agent "<confirmed speaker>"
 ```
 
 Returns immediately with `status: queued`. The stages run server-side. Retrying
 is safe. If the server says the name is not a participant, relay that verbatim
 and re-ask.
 
-## Step 7 — Wait
+## Step 6 — Wait
 
 ```bash
-python3 bin/humalike_audit.py wait --run-id <id>
+python3 ~/.humalike/audit-cli/bin/humalike_audit.py wait --run-id <id>
 ```
 
 Polls a free endpoint every ~5s and prints the rendered report when the run
@@ -119,7 +131,7 @@ you would rather format it yourself.
 If it times out, the run may still be finishing. Give the user the permalink and
 offer `show --run-id <id>` in a moment.
 
-## Step 8 — Present the results
+## Step 7 — Present the results
 
 `wait` and `show` already render the health score, the summary, the findings
 (severity + the message each points at + a fix), the rewrites (the agent's real
@@ -138,10 +150,15 @@ You may reformat for readability, but:
 
 ## Command reference
 
+Every script lives in `~/.humalike/audit-cli/bin/`.
+
 | Command | Cost | Purpose |
 |---|---|---|
+| `start --status` | free | Is everything ready? |
+| `start --wait-login` | free | Block until a pending sign-in is approved |
 | `humalike_login.py --status` | free | Is a working key saved? |
-| `humalike_login.py` | free | Device-auth login; saves the key |
+| `humalike_login.py --begin` | free | Create a sign-in, print the link, exit |
+| `humalike_login.py --resume` | free | Wait for that sign-in, save the key |
 | `humalike_audit.py prepare --file P` | **credits** | Parse transcript, list speakers |
 | `humalike_audit.py prepare --stdin` | **credits** | Same, reading stdin |
 | `humalike_audit.py launch --run-id R --agent A` | **credits** | Start the audit |
@@ -158,12 +175,18 @@ printed verbatim.
 | Situation | What to do |
 |---|---|
 | 402 / out of credits | Tell them to top up at https://humalike.ai. Do not retry. |
-| 401 / 403 | Key is dead — go back to Step 2. |
+| 401 / 403 | Key is dead — re-run `start`. |
 | Over the 250-message cap | Relay verbatim, then offer the most recent 250. |
 | Timeout on `wait` | Share the permalink, offer `show` shortly after. |
 
 Always relay the server's own wording. It knows the exact message count and the
 valid speaker names; paraphrasing only loses that.
+
+## Cost
+
+`prepare` and the audit stages spend the account's credits. `status`, `show`,
+and polling are free. Say so before the first paid call if the user has not
+already agreed to spend.
 
 ## Environment
 
@@ -172,6 +195,7 @@ valid speaker names; paraphrasing only loses that.
 | `HUMALIKE_API_URL` | `https://api.humalike.com` | API base URL |
 | `HUMALIKE_API_KEY` | — | Overrides the saved key for one run |
 | `HUMALIKE_APP_URL` | `https://humalike.ai` | Origin used for permalinks |
+| `HUMALIKE_CONFIG_DIR` | `~/.humalike` | Where the credentials file lives |
 | `HUMALIKE_KEYS_URL` | follows `HUMALIKE_API_URL` | **Dev only.** Splits the device-auth calls onto a separate origin, for local stacks that run the services as separate containers. |
 | `HUMALIKE_CLI_GATEWAY_KEY` | — | **Dev only.** Shared key fronting the device-auth lane; production's gateway injects it. |
 

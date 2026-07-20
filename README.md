@@ -2,9 +2,26 @@
 
 **Find out how your AI agent's conversations actually landed.**
 
-Paste a transcript. Humalike replays it, scores the agent's social conduct,
-points at the exact messages that damaged the interaction, and rewrites the
-worst ones.
+Paste this into Claude Code, Codex, Cursor, or any agent with a shell:
+
+```bash
+git clone https://github.com/Humalike/humalike-audit-cli ~/.humalike/audit-cli 2>/dev/null; bash ~/.humalike/audit-cli/start
+```
+
+That is the whole setup. What happens:
+
+- Your agent runs it, and the output tells it everything it needs — no prompt to write, no docs for it to read.
+- It prints a sign-in link. You click it; approving also creates your Humalike account if you do not have one.
+- Your agent asks for your transcript — a file path or pasted text, in any format or language.
+- It asks which speaker is the AI agent, and confirms with you before spending anything.
+- It runs the audit and shows you the report: a health score, the messages that damaged the conversation, and rewrites.
+
+Re-running the same command updates the checkout and skips the login you already
+did. Requirements: `git` and **Python 3.9+** — nothing else, ever.
+
+---
+
+## What you get back
 
 ```
 ========================================================================
@@ -33,122 +50,106 @@ worst ones.
      and concrete action steps.
 ```
 
----
+Plus rewrites of the worst messages, and a shareable permalink at
+`https://humalike.ai/audit?run=<id>`.
 
-## Run it from your agent
+## Alternative: install as a Claude Code plugin
 
-Paste this into Claude Code, Codex, Cursor, or any agent with a shell:
-
-```
-Clone https://github.com/Humalike/humalike-audit-cli, read its AGENTS.md, and
-follow it to run a Humalike social audit on my chat transcript. Handle the
-login for me — just tell me what to click.
-```
-
-That is the whole setup. The agent clones the repo, walks you through signing
-in (which creates your Humalike account if you do not have one), asks for your
-transcript, confirms which speaker is the AI agent, and prints the report.
-
-## Install as a Claude Code plugin
+If you would rather have a native skill than the paste above:
 
 ```
 /plugin marketplace add Humalike/humalike-audit-cli
 /plugin install humalike-audit@humalike
 ```
 
-Then just ask: *"audit this support transcript"*. The `audit-transcript` skill
-handles the rest.
+Then just ask: *"audit this support transcript"*. Same workflow and the same
+scripts — the skill runs them from the installed plugin directory.
+
+---
 
 ## Use the CLI directly
 
-Python 3.9+. Nothing to install — the scripts are **standard library only**, no
-`pip install`, ever.
+Everything the agent does, you can do by hand.
 
 ```bash
-git clone https://github.com/Humalike/humalike-audit-cli
-cd humalike-audit-cli
-
 # 1. Sign in. Prints a URL + code for you to approve in a browser.
-python3 bin/humalike_login.py
+python3 ~/.humalike/audit-cli/bin/humalike_login.py
 
 # 2. Parse the transcript and see who is in it.
-python3 bin/humalike_audit.py prepare --file chat.txt
+python3 ~/.humalike/audit-cli/bin/humalike_audit.py prepare --file chat.txt
 #   Parsed 16 messages.
 #   Speakers: Maya, Nova
 #   Best guess at the agent: Nova
 
 # 3. Confirm which speaker is the AI agent, and launch.
-python3 bin/humalike_audit.py launch --run-id <id> --agent "Nova"
+python3 ~/.humalike/audit-cli/bin/humalike_audit.py launch --run-id <id> --agent "Nova"
 
 # 4. Wait for it, then read the report.
-python3 bin/humalike_audit.py wait --run-id <id>
+python3 ~/.humalike/audit-cli/bin/humalike_audit.py wait --run-id <id>
 ```
 
 Add `--json` to any subcommand for machine-readable output.
 
-### Why you confirm the agent by hand
+`humalike_login.py` also takes `--begin` (create the sign-in, print the link,
+exit) and `--resume` (wait for that same sign-in to be approved). That split is
+what lets an agent hand you the link immediately instead of blocking on it.
 
-An audit is scored from one participant's point of view. Choosing the wrong
-speaker does not give you a slightly-off report — it gives you a report about
-the wrong party. The API offers a guess; a human confirms it. Nothing runs until
-someone does.
+### `start` options
 
-### Transcript formats
+| Command | Effect |
+|---|---|
+| `bash ~/.humalike/audit-cli/start` | Update, sign in if needed, print the playbook |
+| `bash ~/.humalike/audit-cli/start --status` | Print readiness; exit 0 if ready, 1 if not |
+| `bash ~/.humalike/audit-cli/start --wait-login` | Block until a pending sign-in is approved |
+| `bash ~/.humalike/audit-cli/start --help` | Usage |
 
-Anything. WhatsApp `_chat.txt`, a Slack export, a CSV, a raw log, any language.
-An LLM normalizes it server-side, so **do not clean it up first** — you would
-only lose signal.
+## Transcripts
 
----
+Give it whatever you have: a WhatsApp `_chat.txt`, a Slack or Discord export, a
+CSV, a raw log, any language. The backend normalizes it with an LLM.
 
-## What it costs
+**Do not clean it up first.** Reformatting, translating, or trimming a
+transcript only destroys the signal the audit reads.
 
-Audits spend your account's credits.
+Transcripts are capped at **250 messages** per run. Over the cap the CLI relays
+the server's error and offers the most recent 250 — it never trims silently. If
+you want a different 250, that is your call to make.
 
-- `prepare` runs an LLM to normalize the transcript — **billed**.
-- The audit stages after `launch` — **billed**.
-- `status`, `show`, and all polling — **free**, no LLM.
+## Your API key
 
-Out of credits shows up as a clear error; top up at
-[humalike.ai](https://humalike.ai).
+Saved to `~/.humalike/credentials`, mode 0600, and never printed, logged, or
+included in an error message. `HUMALIKE_API_KEY` overrides it for a single run.
 
-## Limits
-
-Transcripts are capped at **250 messages**. Over that, `prepare` refuses and
-tells you the actual count. The tool will not silently trim your transcript —
-if you want the most recent 250, that is your call to make.
-
-## Where your key lives
-
-`~/.humalike/credentials`, mode `0600` (owner read/write only). It is never
-printed, logged, or included in an error message. `HUMALIKE_API_KEY` overrides
-it for a single run.
-
-To check: `python3 bin/humalike_login.py --status`
+To check: `bash ~/.humalike/audit-cli/start --status`
 
 ## Environment variables
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `HUMALIKE_API_URL` | `https://api.humalike.com` | API base URL |
-| `HUMALIKE_API_KEY` | — | Use this key instead of the saved one |
-| `HUMALIKE_APP_URL` | `https://humalike.ai` | Origin used for report permalinks |
-| `HUMALIKE_KEYS_URL` | follows `HUMALIKE_API_URL` | **Dev only.** Points the device-auth calls at a different origin, for local stacks that run services as separate containers. |
-| `HUMALIKE_CLI_GATEWAY_KEY` | — | **Dev only.** The shared key fronting the device-auth lane. Production's gateway injects this for you; a local stack has no gateway, so you supply it. |
+| `HUMALIKE_API_KEY` | — | Overrides the saved key for one run |
+| `HUMALIKE_APP_URL` | `https://humalike.ai` | Origin used for permalinks |
+| `HUMALIKE_CONFIG_DIR` | `~/.humalike` | Where the credentials file lives |
+| `HUMALIKE_KEYS_URL` | follows `HUMALIKE_API_URL` | **Dev only.** Splits the device-auth calls onto a separate origin, for local stacks that run the services as separate containers. |
+| `HUMALIKE_CLI_GATEWAY_KEY` | — | **Dev only.** Shared key fronting the device-auth lane; production's gateway injects it. |
+
+Do not set the dev-only variables when talking to the hosted API.
 
 ## Repo layout
 
 ```
+start                          the one entry point; prints the agent playbook
 bin/humalike_login.py          device-auth login, saves the key
 bin/humalike_audit.py          prepare / launch / status / wait / show
 bin/_hcommon.py                shared HTTP, credentials, error handling
-skills/audit-transcript/       the Claude Code skill
-AGENTS.md                      the same workflow, for any agent
+skills/humalike-audit/         the Claude Code skill
+AGENTS.md                      the same playbook, for agents without skills
 tests/                         stdlib unittest, no network, no deps
 ```
 
-`AGENTS.md` and `skills/audit-transcript/SKILL.md` describe the same workflow
-for different audiences and are kept in sync deliberately.
+The playbook `start` prints is the **source of truth** for the agent workflow.
+`AGENTS.md` and the skill restate it for their own audiences and are kept in
+sync with it deliberately.
 
 ## Tests
 
@@ -161,4 +162,4 @@ a fake.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

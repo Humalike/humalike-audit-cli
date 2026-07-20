@@ -96,11 +96,26 @@ def permalink(run_id: str) -> str:
     return f"{app_base_url()}/audit?run={run_id}"
 
 
+def _script(name: str) -> str:
+    """Path to a sibling script, written the way the caller should re-type it.
+
+    Every hint this CLI prints is a command an agent may run verbatim from some
+    other working directory, so a relative path would simply not resolve.
+    Collapsed to ``~/`` when it is under home, to match the documented install
+    location instead of a wall of absolute path.
+    """
+    path = Path(__file__).resolve().parent / name
+    try:
+        return f"~/{path.relative_to(Path.home())}"
+    except ValueError:
+        return str(path)
+
+
 def require_api_key() -> str:
     key = load_api_key()
     if not key:
         raise HumalikeError(
-            "no Humalike API key found. Run: python3 bin/humalike_login.py"
+            f"no Humalike API key found. Run: python3 {_script('humalike_login.py')}"
         )
     return key
 
@@ -433,7 +448,7 @@ def cmd_prepare(args: argparse.Namespace, transport: Transport) -> int:
         print(f"  Best guess at the agent: {guess}")
     print("  Confirm which speaker is the AI agent, then run:")
     print(
-        f"    python3 bin/humalike_audit.py launch --run-id {result.get('run_id')} "
+        f"    python3 {_script('humalike_audit.py')} launch --run-id {result.get('run_id')} "
         f"--agent \"{guess or '<speaker>'}\""
     )
     print()
@@ -448,7 +463,9 @@ def cmd_launch(args: argparse.Namespace, transport: Transport) -> int:
         print(json.dumps(result, indent=2))
     else:
         print(f"  Audit queued for agent \"{result.get('agent_name')}\".")
-        print(f"  Run: python3 bin/humalike_audit.py wait --run-id {args.run_id}")
+        print(
+            f"  Run: python3 {_script('humalike_audit.py')} wait --run-id {args.run_id}"
+        )
     return 0
 
 
@@ -608,7 +625,7 @@ def main(argv: list[str] | None = None) -> int:
         if exc.is_out_of_credits:
             message = f"{message}\n  Top up at {app_base_url()} to continue."
         elif exc.is_auth_failure:
-            message = f"{message}\n  Run: python3 bin/humalike_login.py"
+            message = f"{message}\n  Run: python3 {_script('humalike_login.py')}"
         if args.as_json:
             print(json.dumps({"ok": False, "status": exc.status, "error": exc.message}, indent=2))
         else:

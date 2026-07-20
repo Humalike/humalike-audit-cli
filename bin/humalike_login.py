@@ -26,9 +26,24 @@ errors and 5xx responses, and stops only on a definite answer (authorized,
 denied, expired) or when the session expires. Getting this wrong would mean a
 user approves in the browser and the CLI has already given up.
 
+SPLITTING THE FLOW FOR AGENTS
+----------------------------
+Run plain, this blocks: it prints the link and then polls until the human
+approves. That is right for a person at a terminal and wrong for an agent,
+whose shell call would not return until approval -- so the agent could not
+relay the link to the human it is waiting on. Deadlock.
+
+``--begin`` and ``--resume`` cut that in half. ``--begin`` creates the session,
+saves it, prints the link and exits immediately; the agent relays the link.
+``--resume`` picks the same session back up and polls it to completion. One
+poller, no orphaned background process, and the human always has the link
+before anything blocks.
+
 Usage
 -----
-    python3 bin/humalike_login.py            # run the flow
+    python3 bin/humalike_login.py            # run the flow (blocks)
+    python3 bin/humalike_login.py --begin    # print the link, exit now
+    python3 bin/humalike_login.py --resume   # poll the session --begin started
     python3 bin/humalike_login.py --status   # is there a working key already?
     python3 bin/humalike_login.py --json     # machine-readable, for agents
 """
@@ -178,33 +193,75 @@ def poll_until_resolved(
         sleep(interval)
 
 
-def run_login(transport: Transport, *, open_browser: bool, as_json: bool) -> dict[str, Any]:
-    """Execute the full flow and persist the resulting key."""
+def session_path() -> Path:
+    """Where ``--begin`` parks the pending session for ``--resume`` to pick up.
+
+    Sits beside the credentials file so ``HUMALIKE_CONFIG_DIR`` redirects both
+    together and no test can touch a real home directory.
+    """
+    return credentials_path().parent / "login-session.json"
+
+
+def save_session(session: dict[str, Any]) -> Path:
+    """Persist a pending session, 0600.
+
+    The device code is not an API key, but it is a bearer token for a sign-in
+    in flight, so it gets the same treatment as one.
+    """
+    path = session_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(session), encoding="utf-8")
+    path.chmod(0o600)
+    return path
+
+
+def load_session() -> dict[str, Any]:
+    """Read back the pending session, or explain why there is not one."""
+    path = session_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise HumalikeError(
+            "no sign-in is in progress. Run `humalike_login.py --begin` first."
+        ) from None
+    except (OSError, ValueError) as exc:
+        raise HumalikeError(f"the pending sign-in session is unreadable: {exc}") from None
+    if not isinstance(data, dict) or not data.get("device_code"):
+        raise HumalikeError(
+            "the pending sign-in session is incomplete. Run `--begin` again."
+        )
+    return data
+
+
+def clear_session() -> None:
+    """Drop a session that has served its purpose. Never fatal."""
+    try:
+        session_path().unlink()
+    except OSError:
+        pass
+
+
+def begin_login(transport: Transport, *, open_browser: bool) -> dict[str, Any]:
+    """Create a sign-in session, save it, and return the human-facing details.
+
+    Deliberately does not poll: the caller needs the link in hand *now* so it
+    can be handed to the person who has to click it.
+    """
     session = create_session(transport, client=CLIENT_NAME, hostname=short_hostname())
 
     verification_uri = str(session.get("verification_uri") or "")
-    user_code = str(session.get("user_code") or "")
-    interval = int(session.get("interval") or DEFAULT_POLL_INTERVAL_SECONDS)
-    expires_in = int(session.get("expires_in") or MAX_WAIT_SECONDS)
     device_code = str(session.get("device_code") or "")
-
     if not device_code or not verification_uri:
         raise HumalikeError("the server did not return a usable sign-in session.")
 
-    if not as_json:
-        # Always print the URL, even when a browser opened. Half the people
-        # running this are on a headless box or over SSH, where the browser
-        # call silently does nothing and this text is the only way through.
-        print()
-        print("  Sign in to Humalike to continue.")
-        print()
-        print(f"    Open:      {verification_uri}")
-        if user_code:
-            print(f"    Your code: {user_code}")
-        print()
-        print("  New to Humalike? Signing in on that page creates your account.")
-        print("  Waiting for approval... (Ctrl-C to cancel)")
-        print()
+    pending = {
+        "verification_uri": verification_uri,
+        "user_code": str(session.get("user_code") or ""),
+        "device_code": device_code,
+        "interval": int(session.get("interval") or DEFAULT_POLL_INTERVAL_SECONDS),
+        "expires_in": int(session.get("expires_in") or MAX_WAIT_SECONDS),
+    }
+    save_session(pending)
 
     if open_browser:
         try:
@@ -212,10 +269,37 @@ def run_login(transport: Transport, *, open_browser: bool, as_json: bool) -> dic
         except Exception:  # noqa: BLE001 - a missing browser must never be fatal
             pass
 
-    deadline = min(expires_in, MAX_WAIT_SECONDS)
+    return pending
+
+
+def print_session_block(pending: dict[str, Any]) -> None:
+    """Print the link the human must open.
+
+    Always printed, even when a browser opened: half the people running this
+    are on a headless box or over SSH, where the browser call silently does
+    nothing and this text is the only way through.
+    """
+    print()
+    print("  Sign in to Humalike to continue.")
+    print()
+    print(f"    Open:      {pending['verification_uri']}")
+    if pending.get("user_code"):
+        print(f"    Your code: {pending['user_code']}")
+    print()
+    print("  New to Humalike? Signing in on that page creates your account.")
+    print()
+
+
+def finish_login(transport: Transport, pending: dict[str, Any]) -> dict[str, Any]:
+    """Poll a pending session to completion and persist the minted key."""
+    deadline = min(int(pending.get("expires_in") or MAX_WAIT_SECONDS), MAX_WAIT_SECONDS)
     result = poll_until_resolved(
-        transport, device_code, interval=interval, deadline_seconds=deadline
+        transport,
+        str(pending["device_code"]),
+        interval=int(pending.get("interval") or DEFAULT_POLL_INTERVAL_SECONDS),
+        deadline_seconds=deadline,
     )
+    clear_session()
 
     api_key = str(result["api_key"])
     account = result.get("account") if isinstance(result.get("account"), dict) else None
@@ -228,6 +312,16 @@ def run_login(transport: Transport, *, open_browser: bool, as_json: bool) -> dic
         "account": account,
         "key_name": result.get("key_name"),
     }
+
+
+def run_login(transport: Transport, *, open_browser: bool, as_json: bool) -> dict[str, Any]:
+    """The blocking flow: create, show the link, then wait for approval."""
+    pending = begin_login(transport, open_browser=open_browser)
+    if not as_json:
+        print_session_block(pending)
+        print("  Waiting for approval... (Ctrl-C to cancel)")
+        print()
+    return finish_login(transport, pending)
 
 
 def check_status(transport: Transport) -> dict[str, Any]:
@@ -276,6 +370,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="check whether a working key is already saved, then exit",
     )
     parser.add_argument(
+        "--begin",
+        action="store_true",
+        help="start a sign-in, print the link, and exit without waiting",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="wait for the sign-in that --begin started to be approved",
+    )
+    parser.add_argument(
         "--json",
         dest="as_json",
         action="store_true",
@@ -303,6 +407,36 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"Not signed in: {status['reason']}.")
             return 0 if status["logged_in"] else 1
+
+        if args.begin:
+            pending = begin_login(transport, open_browser=not args.no_browser)
+            if args.as_json:
+                # The device code stays out of this: the caller does not need
+                # it (--resume reads it from disk) and it does not belong in an
+                # agent's transcript.
+                print(
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "verification_uri": pending["verification_uri"],
+                            "user_code": pending["user_code"],
+                            "expires_in": pending["expires_in"],
+                        },
+                        indent=2,
+                    )
+                )
+            else:
+                print_session_block(pending)
+            return 0
+
+        if args.resume:
+            result = finish_login(transport, load_session())
+            if args.as_json:
+                print(json.dumps(result, indent=2))
+            else:
+                print(f"  Signed in. Key saved to {result['credentials_path']} (mode 0600).")
+                print()
+            return 0
 
         result = run_login(
             transport, open_browser=not args.no_browser, as_json=args.as_json
