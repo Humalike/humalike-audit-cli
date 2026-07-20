@@ -146,6 +146,7 @@ $RULE
    ACTION REQUIRED — SEND THIS LINK TO THE HUMAN NOW, VERBATIM.
 $RULE
 $(cat "$1")
+
   SAY THIS TO THE HUMAN NOW:
 
     "Click this link to log in — it creates your Humalike account too.
