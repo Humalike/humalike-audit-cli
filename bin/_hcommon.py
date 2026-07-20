@@ -258,6 +258,16 @@ def extract_error_message(status: int, body: dict[str, Any]) -> tuple[str, str |
     """
     error = body.get("error")
     if not isinstance(error, dict):
+        if status == 404:
+            # An action endpoint that does not exist: almost always a
+            # deployment older than this CLI, which is far more useful to say
+            # than "HTTP 404" to someone who did nothing wrong.
+            return (
+                "this Humalike deployment does not have the audit API yet "
+                "(HTTP 404). Update the CLI with `bash ~/.humalike/audit-cli/start`; "
+                "if it persists, the API has not shipped it yet",
+                None,
+            )
         return f"HTTP {status}", None
 
     message = str(error.get("message") or f"HTTP {status}")
