@@ -57,8 +57,10 @@ there is nothing to install and no virtualenv to activate.
   ask for their password.
 - Signing in there creates a Humalike account if they do not have one. There is
   no separate signup step.
-- Then run `bash ~/.humalike/audit-cli/start --wait-login`. It blocks until they
-  approve and writes the key to `~/.humalike/credentials` (mode 0600).
+- Then, in the SAME turn, run `bash ~/.humalike/audit-cli/start --wait-login`.
+  Never ask the human to report back that they approved, and never end your
+  turn waiting for them to say so: this command returns by itself the moment
+  they approve, and writes the key to `~/.humalike/credentials` (mode 0600).
   **Never print or echo the key.**
 - If it reports denied or expired, tell the user and offer to run it again.
 

@@ -150,9 +150,11 @@ $(cat "$1")
   SAY THIS TO THE HUMAN NOW:
 
     "Click this link to log in — it creates your Humalike account too.
-     Tell me once you've approved it."
+     I'll pick it up automatically the moment you approve."
 
-  THEN run this. It blocks until they approve, then saves the key:
+  THEN, IN THE SAME TURN, run this. Do NOT ask them to tell you when they
+  are done, and do NOT wait for another message from them — this command
+  blocks and returns BY ITSELF the moment they approve, then saves the key:
 
        bash $SHOW_ROOT/start --wait-login
 
