@@ -1,6 +1,24 @@
+<p align="center">
+  <a href="https://humalike.ai/"><img src="assets/full_logo_huma_w_bbg.jpg" alt="Humalike" width="50%"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Humalike/humalike-audit-cli/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Humalike/humalike-audit-cli" alt="License"></a>
+  <a href="https://github.com/Humalike/humalike-audit-cli/stargazers"><img src="https://img.shields.io/github/stars/Humalike/humalike-audit-cli" alt="Stars"></a>
+  <a href="https://github.com/Humalike/humalike-audit-cli/issues"><img src="https://img.shields.io/github/issues/Humalike/humalike-audit-cli" alt="Issues"></a>
+  <a href="https://img.shields.io/badge/python-3.9%2B-blue"><img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python 3.9+"></a>
+  <a href="https://humalike.ai/"><img src="https://img.shields.io/badge/website-humalike.ai-1f6feb" alt="Website"></a>
+</p>
+
 # Humalike Audit CLI
 
 **Find out how your AI agent's conversations actually landed.**
+
+Run a [Humalike](https://humalike.ai) social audit on any chat transcript,
+straight from your terminal agent — a health score, the exact messages that
+damaged the conversation, and rewrites that would have landed better.
+
+## Quickstart
 
 Paste this into Claude Code, Codex, Cursor, or any agent with a shell:
 
@@ -10,16 +28,18 @@ git clone https://github.com/Humalike/humalike-audit-cli ~/.humalike/audit-cli 2
 
 That is the whole setup. What happens:
 
-- Your agent runs it, and the output tells it everything it needs — no prompt to write, no docs for it to read.
-- It prints a sign-in link. You click it; approving also creates your Humalike account if you do not have one.
-- Your agent asks for your transcript — a file path or pasted text, in any format or language.
-- It asks which speaker is the AI agent, and confirms with you before spending anything.
-- It runs the audit and shows you the report: a health score, the messages that damaged the conversation, and rewrites.
+1. Your agent runs it, and the output tells it everything it needs — no prompt
+   to write, no docs for it to read.
+2. It prints a sign-in link. You click it; approving also creates your
+   Humalike account if you do not have one.
+3. Your agent asks for your transcript — a file path or pasted text, in any
+   format or language.
+4. It asks which speaker is the AI agent, and confirms with you before
+   spending anything.
+5. It runs the audit and shows you the report.
 
-Re-running the same command updates the checkout and skips the login you already
-did. Requirements: `git` and **Python 3.9+** — nothing else, ever.
-
----
+Re-running the same command updates the checkout and skips the login you
+already did. Requirements: `git` and **Python 3.9+** — nothing else, ever.
 
 ## What you get back
 
@@ -53,7 +73,7 @@ did. Requirements: `git` and **Python 3.9+** — nothing else, ever.
 Plus rewrites of the worst messages, and a shareable permalink at
 `https://humalike.ai/audit?run=<id>`.
 
-## Alternative: install as a Claude Code plugin
+## Install as a Claude Code plugin
 
 If you would rather have a native skill than the paste above:
 
@@ -64,8 +84,6 @@ If you would rather have a native skill than the paste above:
 
 Then just ask: *"audit this support transcript"*. Same workflow and the same
 scripts — the skill runs them from the installed plugin directory.
-
----
 
 ## Use the CLI directly
 
@@ -87,6 +105,14 @@ python3 ~/.humalike/audit-cli/bin/humalike_audit.py launch --run-id <id> --agent
 # 4. Wait for it, then read the report.
 python3 ~/.humalike/audit-cli/bin/humalike_audit.py wait --run-id <id>
 ```
+
+| Subcommand | What it does |
+|---|---|
+| `prepare --file <path>` / `--text <raw>` | Normalize the transcript, store a parked run, list the speakers |
+| `launch --run-id <id> --agent <name>` | Confirm the agent and start the audit (server drives it) |
+| `status --run-id <id>` | One-shot progress check |
+| `wait --run-id <id>` | Block until the run finishes, then print the report |
+| `show --run-id <id>` | Print the results of a finished run |
 
 Add `--json` to any subcommand for machine-readable output.
 
