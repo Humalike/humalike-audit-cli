@@ -1,0 +1,13 @@
+{
+  "name": "humalike-audit",
+  "description": "Run a Humalike social audit on a chat transcript: score how an AI agent's messages landed, flag the ones that damaged the conversation, and rewrite them.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Humalike",
+    "url": "https://humalike.ai"
+  },
+  "homepage": "https://humalike.ai",
+  "repository": "https://github.com/Humalike/humalike-audit-cli",
+  "license": "MIT",
+  "keywords": ["humalike", "audit", "transcript", "agent-quality", "social"]
+}
