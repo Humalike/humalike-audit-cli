@@ -185,6 +185,50 @@ class TestRedact(unittest.TestCase):
         self.assertEqual(redact(None), "<none>")
 
 
+
+class ExtractErrorMessageDetailShapes(unittest.TestCase):
+    """Both detail shapes must survive: the services send {field, message},
+    the framework's request validation sends pydantic's {loc, msg}. Dropping
+    the latter left a mistyped run id reading "request validation failed"
+    with no clue which field or why."""
+
+    def test_pydantic_loc_msg_detail_is_rendered(self) -> None:
+        message, code = extract_error_message(
+            422,
+            {
+                "error": {
+                    "code": "validation_failed",
+                    "message": "request validation failed",
+                    "details": [
+                        {"loc": ["body", "run_id"], "msg": "Input should be a valid UUID"}
+                    ],
+                }
+            },
+        )
+        self.assertEqual(
+            message, "request validation failed (run_id: Input should be a valid UUID)"
+        )
+        self.assertEqual(code, "validation_failed")
+
+    def test_service_field_message_detail_still_rendered(self) -> None:
+        message, _ = extract_error_message(
+            400,
+            {
+                "error": {
+                    "message": "This transcript has 300 messages; the audit accepts at most 250.",
+                    "details": [{"field": "raw_text", "message": "over the 250-message cap"}],
+                }
+            },
+        )
+        self.assertIn("(raw_text: over the 250-message cap)", message)
+
+    def test_detail_without_any_text_is_skipped(self) -> None:
+        message, _ = extract_error_message(
+            400, {"error": {"message": "nope", "details": [{"loc": ["body"]}, "junk"]}}
+        )
+        self.assertEqual(message, "nope")
+
+
 class TestVerifyApiKey(IsolatedConfigTestCase):
     def test_200_means_the_key_works(self) -> None:
         transport = FakeTransport([(200, {"user_id": "user_1"})])

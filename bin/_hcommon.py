@@ -214,6 +214,33 @@ def _decode(raw: bytes) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _render_detail(detail: Any) -> str | None:
+    """One field-level error as ``field: message``, or None if it says nothing.
+
+    Two shapes reach us and both carry the actionable half of the message. The
+    services' own ValidationError sends ``{"field", "message"}``; the framework's
+    request validation sends the pydantic shape ``{"loc", "msg"}`` — that is what
+    a mistyped run id returns, and dropping it left the caller with a bare
+    "request validation failed" naming neither the field nor the problem.
+    """
+    if not isinstance(detail, dict):
+        return None
+    text = detail.get("message") or detail.get("msg")
+    if not text:
+        return None
+    field = detail.get("field")
+    if not field:
+        loc = detail.get("loc")
+        if isinstance(loc, list) and loc:
+            # Skip pydantic's leading "body"/"query" segment: the caller cares
+            # which field, not which half of the request it travelled in.
+            parts = [str(p) for p in loc if str(p) not in {"body", "query", "path"}]
+            field = ".".join(parts) or None
+        elif loc:
+            field = str(loc)
+    return f"{field}: {text}" if field else str(text)
+
+
 def extract_error_message(status: int, body: dict[str, Any]) -> tuple[str, str | None]:
     """Pull the server's own wording out of an error envelope.
 
@@ -231,11 +258,7 @@ def extract_error_message(status: int, body: dict[str, Any]) -> tuple[str, str |
 
     details = error.get("details")
     if isinstance(details, list):
-        rendered = [
-            f"{d.get('field')}: {d.get('message')}" if d.get("field") else str(d.get("message"))
-            for d in details
-            if isinstance(d, dict) and d.get("message")
-        ]
+        rendered = [line for d in details if (line := _render_detail(d))]
         if rendered:
             message = f"{message} ({'; '.join(rendered)})"
 
